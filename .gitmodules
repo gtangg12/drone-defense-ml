@@ -1,0 +1,3 @@
+[submodule "third_party/FastSAM"]
+	path = third_party/FastSAM
+	url = https://github.com/CASIA-IVA-Lab/FastSAM
