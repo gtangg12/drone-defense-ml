@@ -1,6 +1,8 @@
 from typing import Optional
 
+import clip
 import torch
+import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -13,6 +15,41 @@ import sys
 sys.path.append('./third_party/FastSAM')
 from fastsam import FastSAM, FastSAMPrompt
 sys.path.pop()
+
+
+class Clip(nn.Module):
+    EMBEDDING_DIM = 512
+
+    def __init__(
+        self,
+        name: str = 'ViT-L/14',
+        device: Optional[torch.device] = None
+    ):
+        super().__init__()
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model, self.preprocess = clip.load(name, device=self.device)
+
+    def encode_image(self, image: Image.Image | list[Image.Image]):
+        if isinstance(image, Image.Image):
+            image = [image]
+        image_tensor = torch.stack([self.preprocess(img) for img in image]).to(self.device)
+        
+        with torch.no_grad():
+            embedding = self.model.encode_image(image_tensor)
+        return embedding / embedding.norm(dim=-1, keepdim=True)
+
+    def encode_text(self, text: str | list[str]):
+        if isinstance(text, str):
+            text = [text]
+        tokens = clip.tokenize(text).to(self.device)
+        with torch.no_grad():
+            embedding = self.model.encode_text(tokens)
+        return embedding / embedding.norm(dim=-1, keepdim=True)
+
+    def match(self, images: list[Image.Image], texts: list[str]):
+        image_embeddings, text_embeddings = self.encode_image(images), self.encode_text(texts)
+        logits = (image_embeddings @ text_embeddings.T).squeeze(-1)
+        return torch.softmax(100 * logits, dim=0)  # probs
 
 
 class ModelDinoV2:
@@ -34,7 +71,8 @@ class ModelDinoV2:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
-    def __call__(self, image: np.ndarray):
+    def __call__(self, image: Image.Image):
+        image = np.array(image)
         H, W = image.shape[:2]
         round_dim = lambda x: x // self.PATCH_SIZE * self.PATCH_SIZE
         inH = round_dim(int(H / self.downsample_factor))
@@ -69,17 +107,18 @@ class ModelDinoV2:
 class ModelFastSAM:
     def __init__(
         self,
-        checkpoint: str,
-        max_regions=128,
-        min_area=128,
-        device=None,
+        checkpoint: str = "./checkpoints/FastSAM-x.pt",
+        max_regions: int = 128,
+        min_area: int = 1024,
+        device: Optional[str] = None,
     ):
         self.model = FastSAM(checkpoint)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.max_regions = max_regions
         self.min_area = min_area
 
-    def __call__(self, image: np.ndarray, prompt: Optional[dict] = None):
+    def __call__(self, image: Image.Image, prompt: Optional[dict] = None):
+        image = np.array(image)
         H, W = image.shape[:2]
         prompt = prompt or dict(func="everything")
 
@@ -98,35 +137,70 @@ class ModelFastSAM:
 
         bmasks = torch.stack([torch.from_numpy(a['mask']) for a in annotations])
         bboxes = masks_to_boxes(bmasks)
-        return bmasks.permute(1, 2, 0).to(torch.bool), bboxes.to(torch.int32)
+        return bmasks.to(torch.bool), bboxes.to(torch.int32)
 
     @classmethod
     def visualize_masks(cls, image: np.ndarray, bmasks: torch.Tensor) -> Image.Image:
-        bmasks = bmasks.permute(2, 0, 1).cpu().numpy()
+        bmasks = bmasks.cpu().numpy()
         output = image.copy().astype(np.float32)
         colors = np.random.randint(0, 255, size=(len(bmasks), 3))
         for mask, color in zip(bmasks, colors):
             output[mask] = output[mask] * 0.5 + color * 0.5
         return Image.fromarray(output.astype(np.uint8))
 
+    @classmethod
+    def crop(cls, image: Image.Image, bmasks: torch.Tensor, expand_ratio=1.0) -> list[Image.Image]:
+        crops = []
+        for mask in bmasks:
+            coords = torch.nonzero(mask)
+            if len(coords) == 0:
+                continue  # Skip empty masks
+            y_min, x_min = coords.min(dim=0).values
+            y_max, x_max = coords.max(dim=0).values
+            y_center = (y_min + y_max) / 2
+            x_center = (x_min + x_max) / 2
+            h_half = (y_max - y_min) * expand_ratio / 2
+            w_half = (x_max - x_min) * expand_ratio / 2
+            y_min = max(0, int(y_center - h_half))
+            y_max = min(image.height, int(y_center + h_half))
+            x_min = max(0, int(x_center - w_half))
+            x_max = min(image.width, int(x_center + w_half))
+            crop = image.crop((x_min, y_min, x_max, y_max))
+            crops.append(crop)
+        return crops
+
 
 if __name__ == '__main__':
     import time
 
-    image = np.array(Image.open("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones.png").convert("RGB"))
+    image = Image.open("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones.png").convert("RGB")
 
-    model = ModelDinoV2(backbone='dinov2_vits14', downsample_factor=2)
-    for i in range(5):
-        start_time = time.time()
-        features = model(image)
-        print(f"Inference time: {time.time() - start_time:.2f} seconds")
-    output = ModelDinoV2.visualize_pca(features, n_components=3)
-    output.save("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones_dino.png")
+    # model = ModelDinoV2(backbone='dinov2_vits14', downsample_factor=2)
+    # for i in range(5):
+    #     start_time = time.time()
+    #     features = model(image)
+    #     print(f"Inference time: {time.time() - start_time:.2f} seconds")
+    # output = ModelDinoV2.visualize_pca(features, n_components=3)
+    # output.save("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones_dino.png")
+
+    # model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
+    # for i in range(5):
+    #     start_time = time.time()
+    #     bmasks, bboxes = model(image)
+    #     print(f"Inference time: {time.time() - start_time:.2f} seconds")
+    # output = ModelFastSAM.visualize_masks(image, bmasks)
+    # output.save("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones_masks.png")
 
     model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
-    for i in range(5):
-        start_time = time.time()
-        bmasks, bboxes = model(image)
-        print(f"Inference time: {time.time() - start_time:.2f} seconds")
-    output = ModelFastSAM.visualize_masks(image, bmasks)
-    output.save("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones_masks.png")
+    bmasks, _ = model(image)
+    print(bmasks.shape)
+    model_clip = Clip(name='ViT-B/16')
+
+    start_time = time.time()
+    crops = ModelFastSAM.crop(image, bmasks, expand_ratio=1.2)
+    probs = model_clip.match(crops, ["drone"])
+    print(f"Clip time: {time.time() - start_time:.2f} seconds")
+
+    for i, crop in enumerate(crops):
+        crop.save(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/crop_{i}.png")
+    print(probs)

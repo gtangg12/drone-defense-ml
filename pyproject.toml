@@ -12,6 +12,7 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
+    "opencv-python",
     "torch==2.4",
     "torchvision==0.19.0",
     "transformers",
