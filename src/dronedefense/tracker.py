@@ -43,9 +43,12 @@ class Tracker:
             dino_features = self.model_dino(frame)
 
             crops = ModelFastSAM.crop(frame, bmasks, expand_ratio=1.5)
-            probs = self.model_clip.match(crops, ['drone'])
+            probs = self.model_clip.match(crops, ['art'])
             print("PROB", torch.max(probs).item())
-            bmasks = torch.stack([mask for mask, prob in zip(bmasks, probs) if prob.item() > self.clip_threshold])
+            bmasks = [mask for mask, prob in zip(bmasks, probs) if prob.item() > self.clip_threshold]
+            if len(bmasks) == 0:
+                continue
+            bmasks = torch.stack(bmasks)
             self.fastsam_result_queue.put((bmasks, bboxes, dino_features, probs))
 
     def update(self, frame: Image.Image) -> Image.Image:
@@ -61,6 +64,7 @@ class Tracker:
                     continue
                 masked_features = dino_features * mask.unsqueeze(-1)  # [h, w, D]
                 accum += masked_features.sum(dim=(0, 1)) / mask.sum()  # [D]
+            accum = accum / torch.linalg.norm(accum)
 
             self.tracked_dino_feature = accum / len(bmasks)
 

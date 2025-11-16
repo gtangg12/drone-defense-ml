@@ -107,8 +107,8 @@ class ModelDinoV2:
 class ModelFastSAM:
     def __init__(
         self,
-        checkpoint: str = "./checkpoints/FastSAM-s.pt",
-        max_regions: int = 128,
+        checkpoint: str = "./checkpoints/FastSAM-x.pt",
+        max_regions: int = 24,
         min_area: int = 1024,
         device: Optional[str] = None,
     ):
@@ -140,9 +140,9 @@ class ModelFastSAM:
         return bmasks.to(torch.bool), bboxes.to(torch.int32)
 
     @classmethod
-    def visualize_masks(cls, image: np.ndarray, bmasks: torch.Tensor) -> Image.Image:
+    def visualize_masks(cls, image: Image.Image, bmasks: torch.Tensor) -> Image.Image:
         bmasks = bmasks.cpu().numpy()
-        output = image.copy().astype(np.float32)
+        output = np.array(image, dtype=np.float32)
         colors = np.random.randint(0, 255, size=(len(bmasks), 3))
         for mask, color in zip(bmasks, colors):
             output[mask] = output[mask] * 0.5 + color * 0.5
@@ -173,23 +173,25 @@ class ModelFastSAM:
 if __name__ == '__main__':
     import time
 
-    image = Image.open("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones.png").convert("RGB")
+    name = "drink"
+    image = Image.open(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/{name}.png").convert("RGB")
 
-    # model = ModelDinoV2(backbone='dinov2_vits14', downsample_factor=2)
-    # for i in range(5):
-    #     start_time = time.time()
-    #     features = model(image)
-    #     print(f"Inference time: {time.time() - start_time:.2f} seconds")
-    # output = ModelDinoV2.visualize_pca(features, n_components=3)
-    # output.save("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones_dino.png")
+    model = ModelDinoV2(backbone='dinov2_vits14', downsample_factor=2)
+    for i in range(5):
+        start_time = time.time()
+        features = model(image)
+        print(f"Inference time: {time.time() - start_time:.2f} seconds")
+    output = ModelDinoV2.visualize_pca(features, n_components=3)
+    output.save(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/{name}_dino.png")
 
-    # model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
-    # for i in range(5):
-    #     start_time = time.time()
-    #     bmasks, bboxes = model(image)
-    #     print(f"Inference time: {time.time() - start_time:.2f} seconds")
-    # output = ModelFastSAM.visualize_masks(image, bmasks)
-    # output.save("/Users/gtangg12/Desktop/drone-defense-ml/assets/drones_masks.png")
+    model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
+    for i in range(5):
+        start_time = time.time()
+        bmasks, bboxes = model(image)
+        print(f"Inference time: {time.time() - start_time:.2f} seconds")
+    output = ModelFastSAM.visualize_masks(image, bmasks)
+    output.save(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/{name}_masks.png")
+    exit()
 
     model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
     bmasks, _ = model(image)
