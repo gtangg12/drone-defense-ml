@@ -1,6 +1,7 @@
 import time
 from queue import Queue
 from threading import Thread
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -109,8 +110,14 @@ class StreamVideo:
 
 
 class StreamInputCamera:
-    def __init__(self, device=0):
-        self.video_cap = cv2.VideoCapture(device)
+    def __init__(self, device: Optional[int]=None, url: Optional[str]=None):
+        if device is not None:
+            self.video_cap = cv2.VideoCapture(device)
+        elif url is not None:
+            self.video_cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+            self.video_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        else:
+            raise ValueError("Either device or url must be provided")
 
     def stream(self, tracker: Tracker, max_iterations=10000):
         for _ in range(max_iterations):

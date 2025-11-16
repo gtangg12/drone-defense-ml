@@ -19,7 +19,7 @@ if __name__ == '__main__':
         dino_threshold=args.tracker_dino_threshold,
     )
     if args.video is None:
-        stream = StreamInputCamera()
+        stream = StreamInputCamera(device=0)
     else:
         stream = StreamVideo(args.video)
     gui = DisplayGUI(stream, tracker)
