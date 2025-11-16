@@ -16,7 +16,7 @@ class Tracker:
         self,
         clip_threshold: float = 0.075,
         dino_threshold: float = 0.65,
-        fastsam_interval: int = 10,
+        prompt: str = "drone",
     ):
         self.count = 0
         self.model_clip = ModelClip()
@@ -24,7 +24,7 @@ class Tracker:
         self.model_fastsam = ModelFastSAM()
         self.clip_threshold = clip_threshold
         self.dino_threshold = dino_threshold
-        self.fastsam_interval = fastsam_interval
+        self.prompt = prompt
 
         self.tracked_dino_feature = None
 
@@ -43,7 +43,8 @@ class Tracker:
             dino_features = self.model_dino(frame)
 
             crops = ModelFastSAM.crop(frame, bmasks, expand_ratio=1.5)
-            probs = self.model_clip.match(crops, ['art'])
+            print("PROMPT", self.prompt)
+            probs = self.model_clip.match(crops, [self.prompt])
             print("PROB", torch.max(probs).item())
             bmasks = [mask for mask, prob in zip(bmasks, probs) if prob.item() > self.clip_threshold]
             if len(bmasks) == 0:

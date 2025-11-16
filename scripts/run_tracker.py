@@ -9,13 +9,14 @@ if __name__ == '__main__':
     parser.add_argument('--video', type=str, default=None)
     parser.add_argument('--tracker-clip-threshold', type=float, default=0.05)
     parser.add_argument('--tracker-dino-threshold', type=float, default=0.50)
-    parser.add_argument('--tracker-fastsam-interval', type=int, default=10)
+    parser.add_argument('--tracker-prompt', type=str, default="drone")
     args = parser.parse_args()
+    print(args)
 
     tracker = Tracker(
+        prompt=args.tracker_prompt,
         clip_threshold=args.tracker_clip_threshold,
         dino_threshold=args.tracker_dino_threshold,
-        fastsam_interval=args.tracker_fastsam_interval,
     )
     if args.video is None:
         stream = StreamInputCamera()
