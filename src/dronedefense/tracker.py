@@ -44,8 +44,8 @@ class Tracker:
 
             crops = ModelFastSAM.crop(frame, bmasks, expand_ratio=1.5)
             probs = self.model_clip.match(crops, ['drone'])
+            print("PROB", torch.max(probs).item())
             bmasks = torch.stack([mask for mask, prob in zip(bmasks, probs) if prob.item() > self.clip_threshold])
-            #print(probs)
             self.fastsam_result_queue.put((bmasks, bboxes, dino_features, probs))
 
     def update(self, frame: Image.Image) -> Image.Image:
@@ -57,6 +57,8 @@ class Tracker:
             bmasks = F.interpolate(bmasks.unsqueeze(0).float(), size=dino_features.shape[0:2], mode='nearest').squeeze(0)  # [num_masks, h, w]
             accum = 0
             for mask in bmasks:
+                if mask.sum() == 0:
+                    continue
                 masked_features = dino_features * mask.unsqueeze(-1)  # [h, w, D]
                 accum += masked_features.sum(dim=(0, 1)) / mask.sum()  # [D]
 
@@ -70,10 +72,12 @@ class Tracker:
 
         cosine = (dino_features.reshape(-1, dino_features.shape[-1]) @ self.tracked_dino_feature)
         cosine = cosine.reshape(dino_features.shape[0], dino_features.shape[1])
+        print("COSINE", cosine.max().item())
         detect = cosine > self.dino_threshold
         #cv2.imwrite(f"detect_{self.count}.png", np.array(detect.numpy() * 255).astype('uint8'))
         detect = F.interpolate(detect[None, None, ...].float(), size=(frame.height, frame.width), mode='nearest').bool().squeeze().cpu().numpy()
-        output = np.array(frame) * 0.5 + (detect[..., None] * [255, 0, 0]) * 0.5  # red overlay
+        output = np.array(frame, dtype=float)
+        output[detect] = output[detect] * 0.5 + np.array([255, 0, 0]) * 0.5
         return Image.fromarray(output.astype('uint8'))
 
 
