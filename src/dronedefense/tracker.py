@@ -43,6 +43,8 @@ class Tracker:
             dino_features = self.model_dino(frame)
 
             crops = ModelFastSAM.crop(frame, bmasks, expand_ratio=1.5)
+            if len(crops) == 0:
+                continue
             print("PROMPT", self.prompt)
             probs = self.model_clip.match(crops, [self.prompt])
             print("PROB", torch.max(probs).item())

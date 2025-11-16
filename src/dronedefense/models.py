@@ -109,15 +109,19 @@ class ModelFastSAM:
         self,
         checkpoint: str = "./checkpoints/FastSAM-x.pt",
         max_regions: int = 24,
-        min_area: int = 1024,
+        min_area_ratio: int = 0.0025,
+        max_area_ratio: int = 0.25,
         device: Optional[str] = None,
     ):
         self.model = FastSAM(checkpoint)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.max_regions = max_regions
-        self.min_area = min_area
+        self.min_area_ratio = min_area_ratio
+        self.max_area_ratio = max_area_ratio
 
     def __call__(self, image: Image.Image, prompt: Optional[dict] = None):
+        min_area = (image.width * image.height) * self.min_area_ratio
+        max_area = (image.width * image.height) * self.max_area_ratio
         image = np.array(image)
         H, W = image.shape[:2]
         prompt = prompt or dict(func="everything")
@@ -129,7 +133,7 @@ class ModelFastSAM:
         if isinstance(masks, torch.Tensor):
             masks = masks.detach().cpu().numpy()
 
-        annotations = [{'mask': m, 'area': m.sum()} for m in masks if m.sum() >= self.min_area]
+        annotations = [{'mask': m, 'area': m.sum()} for m in masks if (m.sum() >= min_area and m.sum() <= max_area)]
         annotations = sorted(annotations, key=lambda x: x['area'], reverse=True)[:self.max_regions]
 
         if not annotations:
@@ -173,7 +177,7 @@ class ModelFastSAM:
 if __name__ == '__main__':
     import time
 
-    name = "drink"
+    name = "tmp"
     image = Image.open(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/{name}.png").convert("RGB")
 
     model = ModelDinoV2(backbone='dinov2_vits14', downsample_factor=2)
@@ -191,11 +195,11 @@ if __name__ == '__main__':
         print(f"Inference time: {time.time() - start_time:.2f} seconds")
     output = ModelFastSAM.visualize_masks(image, bmasks)
     output.save(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/{name}_masks.png")
-    exit()
 
     model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
     bmasks, _ = model(image)
-    print(bmasks.shape)
+    for mask in bmasks:
+        print("Mask area:", mask.sum().item())
     model_clip = ModelClip(name='ViT-B/16')
 
     start_time = time.time()
@@ -204,5 +208,5 @@ if __name__ == '__main__':
     print(f"Clip time: {time.time() - start_time:.2f} seconds")
 
     for i, crop in enumerate(crops):
-        crop.save(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/crop_{i}.png")
+        crop.save(f"/Users/gtangg12/Desktop/drone-defense-ml/assets/crop_{name}_{i}.png")
     print(probs)
