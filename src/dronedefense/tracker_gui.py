@@ -1,7 +1,7 @@
+import cv2
+import numpy as np
 import tkinter as tk
 from PIL import Image, ImageTk
-
-import cv2
 
 
 class DisplayGUI:
@@ -27,7 +27,8 @@ class DisplayGUI:
         canvasH = self.canvas.winfo_height()
         canvasW = self.canvas.winfo_width()
 
-        H, W = frame.shape[:2]
+        H, W = frame.height, frame.width
+        frame = np.array(frame)
         scale = min(canvasW / W, canvasH / H)
         newH, newW = int(H * scale), int(W * scale)
         frame_resized = cv2.resize(frame, (newW, newH))

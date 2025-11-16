@@ -22,7 +22,7 @@ class ModelClip(nn.Module):
 
     def __init__(
         self,
-        name: str = 'ViT-L/14',
+        name: str = 'ViT-B/16',
         device: Optional[torch.device] = None
     ):
         super().__init__()
@@ -107,7 +107,7 @@ class ModelDinoV2:
 class ModelFastSAM:
     def __init__(
         self,
-        checkpoint: str = "./checkpoints/FastSAM-x.pt",
+        checkpoint: str = "./checkpoints/FastSAM-s.pt",
         max_regions: int = 128,
         min_area: int = 1024,
         device: Optional[str] = None,

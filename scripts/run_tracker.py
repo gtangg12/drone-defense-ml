@@ -7,8 +7,8 @@ from dronedefense.tracker_gui import DisplayGUI
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--video', type=str, default=None)
-    parser.add_argument('--tracker-clip-threshold', type=float, default=0.075)
-    parser.add_argument('--tracker-dino-threshold', type=float, default=0.9)
+    parser.add_argument('--tracker-clip-threshold', type=float, default=0.05)
+    parser.add_argument('--tracker-dino-threshold', type=float, default=0.50)
     parser.add_argument('--tracker-fastsam-interval', type=int, default=10)
     args = parser.parse_args()
 

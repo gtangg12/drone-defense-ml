@@ -3,6 +3,7 @@ from queue import Queue
 from threading import Thread
 
 import cv2
+import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -14,7 +15,7 @@ class Tracker:
     def __init__(
         self,
         clip_threshold: float = 0.075,
-        dino_threshold: float = 0.9,
+        dino_threshold: float = 0.65,
         fastsam_interval: int = 10,
     ):
         self.count = 0
@@ -38,55 +39,41 @@ class Tracker:
             frame = self.fastsam_queue.get()
             if frame is None:
                 break
-            masks, bboxes = self.model_fastsam(frame)
+            bmasks, bboxes = self.model_fastsam(frame)
             dino_features = self.model_dino(frame)
-            self.fastsam_result_queue.put((masks, bboxes, dino_features))
+
+            crops = ModelFastSAM.crop(frame, bmasks, expand_ratio=1.5)
+            probs = self.model_clip.match(crops, ['drone'])
+            bmasks = torch.stack([mask for mask, prob in zip(bmasks, probs) if prob.item() > self.clip_threshold])
+            #print(probs)
+            self.fastsam_result_queue.put((bmasks, bboxes, dino_features, probs))
 
     def update(self, frame: Image.Image) -> Image.Image:
-        print(len(self.fastsam_queue.queue), len(self.fastsam_result_queue.queue))
-        if self.count % self.fastsam_interval == 0:
-            if not self.fastsam_queue.full():
-                self.fastsam_queue.put(frame)
+        if not self.fastsam_queue.full():
+            self.fastsam_queue.put(frame)
 
         if not self.fastsam_result_queue.empty():
-            pass
-            # masks, bboxes, dino_features = self.fastsam_result_queue.get()
+            bmasks, bboxes, dino_features, probs = self.fastsam_result_queue.get()
+            bmasks = F.interpolate(bmasks.unsqueeze(0).float(), size=dino_features.shape[0:2], mode='nearest').squeeze(0)  # [num_masks, h, w]
+            accum = 0
+            for mask in bmasks:
+                masked_features = dino_features * mask.unsqueeze(-1)  # [h, w, D]
+                accum += masked_features.sum(dim=(0, 1)) / mask.sum()  # [D]
 
-            # if self.tracked_dino_feature is None:
-            #     crops = ModelFastSAM.crop(frame, bboxes)
-            #     probs = self.model_clip.match(crops, ['drone'])
-            #     masks = [mask for mask, prob in zip(masks, probs) if prob.item() > self.clip_threshold]
-
-            # masks = F.interpolate(masks.unsqueeze(0).float(), size=dino_features.shape[1:3], mode='nearest').squeeze(0)  # [num_masks, h, w]
-
-            # if self.tracked_dino_feature is not None:
-            #     filtered_masks = []
-            #     for mask in masks:
-            #         masked_features = (dino_features * mask.unsqueeze(-1)).sum(dim=(0, 1)) / mask.sum()
-            #         cosine = masked_features @ self.tracked_dino_feature
-            #         if cosine > self.dino_threshold:
-            #             filtered_masks.append(mask)
-            #     masks = filtered_masks
-
-            # accum = 0
-            # for mask in masks:
-            #     masked_features = dino_features * mask.unsqueeze(-1)  # [h, w, D]
-            #     accum += masked_features.sum(dim=(0, 1)) / mask.sum()  # [D]
-
-            # self.tracked_dino_feature = accum / len(masks)
+            self.tracked_dino_feature = accum / len(bmasks)
 
         self.count += 1
 
-        return frame
-
         if self.tracked_dino_feature is None:
             return frame
-
         dino_features = self.model_dino(frame) # [h, w, D]
-        cosine = (dino_features @ self.tracked_dino_feature).max(dim=-1).values  # [h, w]
+
+        cosine = (dino_features.reshape(-1, dino_features.shape[-1]) @ self.tracked_dino_feature)
+        cosine = cosine.reshape(dino_features.shape[0], dino_features.shape[1])
         detect = cosine > self.dino_threshold
-        detect = F.interpolate(detect, size=frame.size[::-1], mode='nearest').squeeze().cpu().numpy()
-        output = frame.copy() * 0.5 + (detect[..., None] * [255, 0, 0]) * 0.5  # red overlay
+        #cv2.imwrite(f"detect_{self.count}.png", np.array(detect.numpy() * 255).astype('uint8'))
+        detect = F.interpolate(detect[None, None, ...].float(), size=(frame.height, frame.width), mode='nearest').bool().squeeze().cpu().numpy()
+        output = np.array(frame) * 0.5 + (detect[..., None] * [255, 0, 0]) * 0.5  # red overlay
         return Image.fromarray(output.astype('uint8'))
 
 
@@ -101,11 +88,11 @@ class StreamVideo:
             ret, frame = self.video_cap.read()
             if not ret:
                 break
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             time_elapsed = time.time() - start_time
             count += 1
             if count < int(time_elapsed * 30):
-                continue  # skip frame to catch up
+                continue # skip frame to catch up
             output = tracker.update(frame)
             yield output
 
@@ -119,7 +106,7 @@ class StreamInputCamera:
             ret, frame = self.video_cap.read()
             if not ret:
                 break
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             output = tracker.update(frame)
             yield output
 
