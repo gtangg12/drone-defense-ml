@@ -17,7 +17,7 @@ from fastsam import FastSAM, FastSAMPrompt
 sys.path.pop()
 
 
-class Clip(nn.Module):
+class ModelClip(nn.Module):
     EMBEDDING_DIM = 512
 
     def __init__(
@@ -194,7 +194,7 @@ if __name__ == '__main__':
     model = ModelFastSAM("/Users/gtangg12/Desktop/drone-defense-ml/checkpoints/FastSAM-x.pt")
     bmasks, _ = model(image)
     print(bmasks.shape)
-    model_clip = Clip(name='ViT-B/16')
+    model_clip = ModelClip(name='ViT-B/16')
 
     start_time = time.time()
     crops = ModelFastSAM.crop(image, bmasks, expand_ratio=1.2)
