@@ -1,4 +1,21 @@
 # drone-defense-ml
+```
+git clone --recurse-submodules git@github.com:gtangg12/drone-defense-ml.git
+```
+Install dependencies:
+```
+pip install -e .
+```
+
+Then cd `third_party/fastsam` and run
+```
+pip install -e .
+```
+
+Change fastsam/prompt.py to include
+```
+import clip
+```
 
 Video streaming:
 ```
